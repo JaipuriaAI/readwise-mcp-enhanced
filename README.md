@@ -12,6 +12,14 @@ A Model Context Protocol (MCP) server for the Readwise Reader API, built with Ty
 - **LLM-Friendly Content**: HTML content automatically converted to clean text using r.jina.ai
 - **Complete Data Access**: Returns full document information including content, metadata, and timestamps
 
+## API Documentation
+
+For detailed information about the Readwise Reader API endpoints, parameters, and examples, please refer to the official API documentation:
+
+**📖 [Readwise Reader API Documentation](https://readwise.io/reader_api)**
+
+This MCP server implements all the core endpoints described in the official documentation.
+
 ## Installation
 
 ```bash
@@ -136,19 +144,6 @@ The server requires a Readwise access token to be provided via the `READWISE_TOK
 - Default: 20 requests/minute
 - Document CREATE/UPDATE: 50 requests/minute
 - 429 responses include "Retry-After" header
-
-## Development
-
-```bash
-# Development mode
-npm run dev
-
-# Build
-npm run build
-
-# Start production server
-npm start
-```
 
 ## License
 
