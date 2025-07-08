@@ -46,12 +46,14 @@ export interface UpdateDocumentRequest {
 export interface ListDocumentsParams {
   id?: string;
   updatedAfter?: string;
+  addedAfter?: string;
   location?: 'new' | 'later' | 'shortlist' | 'archive' | 'feed';
   category?: 'article' | 'book' | 'tweet' | 'pdf' | 'email' | 'youtube' | 'podcast';
   tag?: string;
   pageCursor?: string;
   withHtmlContent?: boolean;
   withFullContent?: boolean;
+  limit?: number;
 }
 
 export interface ListDocumentsResponse {
@@ -67,4 +69,14 @@ export interface ReadwiseTag {
 
 export interface ReadwiseConfig {
   token: string;
+}
+
+export interface APIMessage {
+  type: 'info' | 'warning' | 'error';
+  content: string;
+}
+
+export interface APIResponse<T> {
+  data: T;
+  messages?: APIMessage[];
 }

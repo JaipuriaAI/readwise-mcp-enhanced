@@ -126,3 +126,5 @@ lib/
 # Temporary files
 tmp/
 temp/
+
+.cursorrules

@@ -5,7 +5,9 @@ import {
   ListDocumentsParams, 
   ListDocumentsResponse,
   ReadwiseTag,
-  ReadwiseConfig
+  ReadwiseConfig,
+  APIResponse,
+  APIMessage
 } from './types.js';
 
 export class ReadwiseClient {
@@ -33,6 +35,12 @@ export class ReadwiseClient {
     });
 
     if (!response.ok) {
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('Retry-After');
+        const retryAfterSeconds = retryAfter ? parseInt(retryAfter, 10) : 60;
+        throw new Error(`RATE_LIMIT:${retryAfterSeconds}`);
+      }
+      
       const errorText = await response.text();
       throw new Error(`Readwise API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
@@ -40,118 +48,217 @@ export class ReadwiseClient {
     return response.json();
   }
 
-  async validateAuth(): Promise<{ detail: string }> {
-    return this.makeRequest(this.authUrl);
+  private createResponse<T>(data: T, messages?: APIMessage[]): APIResponse<T> {
+    return { data, messages };
   }
 
-  async createDocument(data: CreateDocumentRequest): Promise<ReadwiseDocument> {
-    return this.makeRequest<ReadwiseDocument>('/save/', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+  private createInfoMessage(content: string): APIMessage {
+    return { type: 'info', content };
   }
 
-  async listDocuments(params: ListDocumentsParams = {}): Promise<ListDocumentsResponse> {
-    // If withFullContent is requested, first check the document count
-    if (params.withFullContent) {
-      const countParams = { ...params };
-      delete countParams.withFullContent;
-      delete countParams.withHtmlContent; // Also remove HTML content for the count check
+  private createErrorMessage(content: string): APIMessage {
+    return { type: 'error', content };
+  }
+
+  async validateAuth(): Promise<APIResponse<{ detail: string }>> {
+    try {
+      const result = await this.makeRequest<{ detail: string }>(this.authUrl);
+      return this.createResponse(result);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {
+        const seconds = parseInt(error.message.split(':')[1], 10);
+        throw new Error(`Rate limit exceeded. Too many requests. Please retry after ${seconds} seconds.`);
+      }
+      throw error;
+    }
+  }
+
+  async createDocument(data: CreateDocumentRequest): Promise<APIResponse<ReadwiseDocument>> {
+    try {
+      const result = await this.makeRequest<ReadwiseDocument>('/save/', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+      return this.createResponse(result);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {
+        const seconds = parseInt(error.message.split(':')[1], 10);
+        throw new Error(`Rate limit exceeded. Too many requests. Please retry after ${seconds} seconds.`);
+      }
+      throw error;
+    }
+  }
+
+  async listDocuments(params: ListDocumentsParams = {}): Promise<APIResponse<ListDocumentsResponse>> {
+    try {
+      // If withFullContent is requested, first check the document count
+      if (params.withFullContent) {
+        const countParams = { ...params };
+        delete countParams.withFullContent;
+        delete countParams.withHtmlContent; // Also remove HTML content for the count check
+        
+        const countSearchParams = new URLSearchParams();
+        Object.entries(countParams).forEach(([key, value]) => {
+          if (value !== undefined) {
+            countSearchParams.append(key, String(value));
+          }
+        });
+
+        const countQuery = countSearchParams.toString();
+        const countEndpoint = `/list/${countQuery ? `?${countQuery}` : ''}`;
+        
+        const countResponse = await this.makeRequest<ListDocumentsResponse>(countEndpoint);
+        
+        if (countResponse.count > 5) {
+          // Get first 5 documents with full content
+          const limitedParams = { ...params, limit: 5 };
+          const searchParams = new URLSearchParams();
+          
+          Object.entries(limitedParams).forEach(([key, value]) => {
+            if (value !== undefined) {
+              searchParams.append(key, String(value));
+            }
+          });
+
+          const query = searchParams.toString();
+          const endpoint = `/list/${query ? `?${query}` : ''}`;
+          
+          const result = await this.makeRequest<ListDocumentsResponse>(endpoint);
+          
+          let message: APIMessage;
+          if (countResponse.count <= 20) {
+            message = this.createInfoMessage(
+              `Found ${countResponse.count} documents, but only returning the first 5 due to full content request. ` +
+              `To get the remaining ${countResponse.count - 5} documents with full content, ` +
+              `you can fetch them individually by their IDs using the update/read document API.`
+            );
+          } else {
+            message = this.createErrorMessage(
+              `Found ${countResponse.count} documents, but only returning the first 5 due to full content request. ` +
+              `Getting full content for more than 20 documents is not supported due to performance limitations.`
+            );
+          }
+          
+          return this.createResponse(result, [message]);
+        }
+      }
+
+      const searchParams = new URLSearchParams();
       
-      const countSearchParams = new URLSearchParams();
-      Object.entries(countParams).forEach(([key, value]) => {
+      Object.entries(params).forEach(([key, value]) => {
         if (value !== undefined) {
-          countSearchParams.append(key, String(value));
+          searchParams.append(key, String(value));
         }
       });
 
-      const countQuery = countSearchParams.toString();
-      const countEndpoint = `/list/${countQuery ? `?${countQuery}` : ''}`;
+      const query = searchParams.toString();
+      const endpoint = `/list/${query ? `?${query}` : ''}`;
       
-      const countResponse = await this.makeRequest<ListDocumentsResponse>(countEndpoint);
-      
-      if (countResponse.count > 5) {
-        throw new Error(
-          `Too many documents found (${countResponse.count}). ` +
-          'When requesting full content, please be more specific in your query to reduce the number of documents to 5 or fewer. ' +
-          'You can use filters like location, category, tag, or other search parameters to narrow down your results.'
-        );
+      const result = await this.makeRequest<ListDocumentsResponse>(endpoint);
+      return this.createResponse(result);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {
+        const seconds = parseInt(error.message.split(':')[1], 10);
+        throw new Error(`Rate limit exceeded. Too many requests. Please retry after ${seconds} seconds.`);
       }
+      throw error;
     }
+  }
 
-    const searchParams = new URLSearchParams();
-    
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) {
-        searchParams.append(key, String(value));
+  async updateDocument(id: string, data: UpdateDocumentRequest): Promise<APIResponse<ReadwiseDocument>> {
+    try {
+      const result = await this.makeRequest<ReadwiseDocument>(`/update/${id}/`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      });
+      return this.createResponse(result);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {
+        const seconds = parseInt(error.message.split(':')[1], 10);
+        throw new Error(`Rate limit exceeded. Too many requests. Please retry after ${seconds} seconds.`);
       }
-    });
-
-    const query = searchParams.toString();
-    const endpoint = `/list/${query ? `?${query}` : ''}`;
-    
-    return this.makeRequest<ListDocumentsResponse>(endpoint);
+      throw error;
+    }
   }
 
-  async updateDocument(id: string, data: UpdateDocumentRequest): Promise<ReadwiseDocument> {
-    return this.makeRequest<ReadwiseDocument>(`/update/${id}/`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async deleteDocument(id: string): Promise<void> {
-    await this.makeRequest(`/delete/${id}/`, {
-      method: 'DELETE',
-    });
-  }
-
-  async listTags(): Promise<ReadwiseTag[]> {
-    return this.makeRequest<ReadwiseTag[]>('/tags/');
-  }
-
-  async searchDocumentsByTopic(searchTerms: string[]): Promise<ReadwiseDocument[]> {
-    // Fetch all documents without full content for performance
-    const allDocuments: ReadwiseDocument[] = [];
-    let nextPageCursor: string | undefined;
-    
-    do {
-      const params: ListDocumentsParams = {
-        withFullContent: false,
-        withHtmlContent: false,
-      };
-      
-      if (nextPageCursor) {
-        params.pageCursor = nextPageCursor;
+  async deleteDocument(id: string): Promise<APIResponse<void>> {
+    try {
+      await this.makeRequest(`/delete/${id}/`, {
+        method: 'DELETE',
+      });
+      return this.createResponse(undefined);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {
+        const seconds = parseInt(error.message.split(':')[1], 10);
+        throw new Error(`Rate limit exceeded. Too many requests. Please retry after ${seconds} seconds.`);
       }
+      throw error;
+    }
+  }
+
+  async listTags(): Promise<APIResponse<ReadwiseTag[]>> {
+    try {
+      const result = await this.makeRequest<ReadwiseTag[]>('/tags/');
+      return this.createResponse(result);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {
+        const seconds = parseInt(error.message.split(':')[1], 10);
+        throw new Error(`Rate limit exceeded. Too many requests. Please retry after ${seconds} seconds.`);
+      }
+      throw error;
+    }
+  }
+
+  async searchDocumentsByTopic(searchTerms: string[]): Promise<APIResponse<ReadwiseDocument[]>> {
+    try {
+      // Fetch all documents without full content for performance
+      const allDocuments: ReadwiseDocument[] = [];
+      let nextPageCursor: string | undefined;
       
-      const response = await this.listDocuments(params);
-      allDocuments.push(...response.results);
-      nextPageCursor = response.nextPageCursor;
-    } while (nextPageCursor);
+      do {
+        const params: ListDocumentsParams = {
+          withFullContent: false,
+          withHtmlContent: false,
+        };
+        
+        if (nextPageCursor) {
+          params.pageCursor = nextPageCursor;
+        }
+        
+        const response = await this.listDocuments(params);
+        allDocuments.push(...response.data.results);
+        nextPageCursor = response.data.nextPageCursor;
+      } while (nextPageCursor);
 
-    // Create regex patterns from search terms (case-insensitive)
-    const regexPatterns = searchTerms.map(term => 
-      new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
-    );
+      // Create regex patterns from search terms (case-insensitive)
+      const regexPatterns = searchTerms.map(term => 
+        new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+      );
 
-    // Filter documents that match any of the search terms
-    const matchingDocuments = allDocuments.filter(doc => {
-      // Extract searchable text fields
-      const searchableFields = [
-        doc.title || '',
-        doc.summary || '',
-        doc.notes || '',
-        // Handle tags - they can be string array or object
-        Array.isArray(doc.tags) ? doc.tags.join(' ') : '',
-      ];
+      // Filter documents that match any of the search terms
+      const matchingDocuments = allDocuments.filter(doc => {
+        // Extract searchable text fields
+        const searchableFields = [
+          doc.title || '',
+          doc.summary || '',
+          doc.notes || '',
+          // Handle tags - they can be string array or object
+          Array.isArray(doc.tags) ? doc.tags.join(' ') : '',
+        ];
 
-      const searchableText = searchableFields.join(' ').toLowerCase();
+        const searchableText = searchableFields.join(' ').toLowerCase();
 
-      // Check if any regex pattern matches
-      return regexPatterns.some(pattern => pattern.test(searchableText));
-    });
+        // Check if any regex pattern matches
+        return regexPatterns.some(pattern => pattern.test(searchableText));
+      });
 
-    return matchingDocuments;
+      return this.createResponse(matchingDocuments);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {
+        const seconds = parseInt(error.message.split(':')[1], 10);
+        throw new Error(`Rate limit exceeded. Too many requests. Please retry after ${seconds} seconds.`);
+      }
+      throw error;
+    }
   }
 }
