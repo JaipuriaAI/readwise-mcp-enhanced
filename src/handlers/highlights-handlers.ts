@@ -15,11 +15,22 @@ export async function handleListHighlights(args: any) {
   
   const response = await client.listHighlights(params);
   
+  // Strip to essentials
+  const minimal = {
+    count: response.data.count,
+    results: response.data.results.map(h => ({
+      id: h.id,
+      text: h.text,
+      note: h.note || undefined,
+      book_id: h.book_id
+    }))
+  };
+  
   return {
     content: [
       {
         type: 'text',
-        text: JSON.stringify(response.data, null, 2),
+        text: JSON.stringify(minimal, null, 2),
       },
     ],
   };
@@ -67,11 +78,23 @@ export async function handleGetDailyReview(args: any) {
   
   const response = await client.getDailyReview();
   
+  // Strip to essentials for daily review
+  const minimal = {
+    review_id: response.data.review_id,
+    review_url: response.data.review_url,
+    highlights: response.data.highlights.map(h => ({
+      text: h.text,
+      title: h.title,
+      author: h.author,
+      note: h.note || undefined
+    }))
+  };
+  
   return {
     content: [
       {
         type: 'text',
-        text: JSON.stringify(response.data, null, 2),
+        text: JSON.stringify(minimal, null, 2),
       },
     ],
   };
@@ -93,11 +116,23 @@ export async function handleListBooks(args: any) {
   
   const response = await client.listBooks(params);
   
+  // Strip to essentials
+  const minimal = {
+    count: response.data.count,
+    results: response.data.results.map(b => ({
+      id: b.id,
+      title: b.title,
+      author: b.author,
+      category: b.category,
+      num_highlights: b.num_highlights
+    }))
+  };
+  
   return {
     content: [
       {
         type: 'text',
-        text: JSON.stringify(response.data, null, 2),
+        text: JSON.stringify(minimal, null, 2),
       },
     ],
   };
@@ -108,11 +143,18 @@ export async function handleGetBookHighlights(args: any) {
   
   const response = await client.getBookHighlights(args.bookId);
   
+  // Strip to essentials
+  const minimal = response.data.map(h => ({
+    id: h.id,
+    text: h.text,
+    note: h.note || undefined
+  }));
+  
   return {
     content: [
       {
         type: 'text',
-        text: JSON.stringify(response.data, null, 2),
+        text: JSON.stringify(minimal, null, 2),
       },
     ],
   };
@@ -130,11 +172,20 @@ export async function handleSearchHighlights(args: any) {
   
   const response = await client.searchHighlights(params);
   
+  // Strip to essentials
+  const minimal = response.data.map(result => ({
+    text: result.highlight.text,
+    note: result.highlight.note || undefined,
+    book: result.book.title,
+    author: result.book.author,
+    score: result.score
+  }));
+  
   return {
     content: [
       {
         type: 'text',
-        text: JSON.stringify(response.data, null, 2),
+        text: JSON.stringify(minimal, null, 2),
       },
     ],
   };
@@ -146,11 +197,32 @@ export async function handleEnhancedTopicSearch(args: any) {
   
   const response = await client.searchDocumentsAndHighlights(args.searchTerms);
   
+  // Strip to essentials
+  const minimal = {
+    documents: response.data.documents.map(d => ({
+      id: d.id,
+      title: d.title,
+      author: d.author,
+      url: d.url
+    })),
+    highlights: response.data.highlights?.map(result => ({
+      text: result.highlight.text,
+      book: result.book.title,
+      author: result.book.author
+    })),
+    books: response.data.books?.map(b => ({
+      id: b.id,
+      title: b.title,
+      author: b.author,
+      num_highlights: b.num_highlights
+    }))
+  };
+  
   return {
     content: [
       {
         type: 'text',
-        text: JSON.stringify(response.data, null, 2),
+        text: JSON.stringify(minimal, null, 2),
       },
     ],
   };
