@@ -19,20 +19,27 @@ async function segmentMergedWords(text: string): Promise<string> {
   if (!text || text.length < 10) return text;
   
   try {
+    console.error('[Readwise-MCP] [segmentMergedWords] Starting word segmentation...');
     const ninja = await initWordSegmentation();
+    console.error('[Readwise-MCP] [segmentMergedWords] WordsNinja initialized successfully');
     
     // Split text into words and process each potential merged word
     const words = text.split(/\s+/);
     const processedWords = [];
+    let segmentationCount = 0;
+    
+    console.error(`[Readwise-MCP] [segmentMergedWords] Processing ${words.length} words...`);
     
     for (const word of words) {
-      // Only process words longer than 12 characters (likely merged)
-      if (word.length > 12 && /^[a-zA-Z]+$/.test(word)) {
+      // Lower the threshold to catch merged words like "whatyou" (7 chars)
+      if (word.length >= 6 && /^[a-zA-Z]+$/.test(word)) {
         try {
           const segmented = ninja.splitSentence(word.toLowerCase());
           if (segmented && segmented.length > 1) {
             // Successfully segmented, join with spaces
             processedWords.push(segmented.join(' '));
+            segmentationCount++;
+            console.error(`[Readwise-MCP] [segmentMergedWords] Segmented "${word}" → "${segmented.join(' ')}"`);
           } else {
             // Couldn't segment, keep original
             processedWords.push(word);
@@ -40,6 +47,7 @@ async function segmentMergedWords(text: string): Promise<string> {
         } catch (error) {
           // Error in segmentation, keep original word
           processedWords.push(word);
+          console.error(`[Readwise-MCP] [segmentMergedWords] Error segmenting "${word}":`, error);
         }
       } else {
         // Word is normal length or contains non-letters, keep as is
@@ -47,10 +55,11 @@ async function segmentMergedWords(text: string): Promise<string> {
       }
     }
     
+    console.error(`[Readwise-MCP] [segmentMergedWords] Completed: processed ${words.length} words, segmented ${segmentationCount} words`);
     return processedWords.join(' ');
   } catch (error) {
     // If segmentation fails, return original text
-    console.warn('Word segmentation failed:', error);
+    console.error('[Readwise-MCP] [segmentMergedWords] Failed:', error);
     return text;
   }
 }
@@ -79,6 +88,8 @@ export async function extractTextFromHtml(htmlContent: string): Promise<string> 
     return '';
   }
   
+  console.error('[Readwise-MCP] [extractTextFromHtml] Starting HTML text extraction...');
+  
   const root = parse(htmlContent);
   
   // Remove non-content elements
@@ -97,8 +108,12 @@ export async function extractTextFromHtml(htmlContent: string): Promise<string> 
     .replace(/(\w)([A-Z])/g, '$1 $2')  // Add space before capital letters if missing
     .trim();
   
+  console.error(`[Readwise-MCP] [extractTextFromHtml] Extracted ${cleanText.length} characters, applying word segmentation...`);
+  
   // Apply word segmentation to fix merged words
   cleanText = await segmentMergedWords(cleanText);
+  
+  console.error(`[Readwise-MCP] [extractTextFromHtml] Final text length: ${cleanText.length} characters`);
   
   return title ? `${title}\n\n${cleanText}` : cleanText;
 }
