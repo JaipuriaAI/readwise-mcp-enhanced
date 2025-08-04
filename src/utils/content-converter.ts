@@ -1,4 +1,58 @@
 import { parse } from 'node-html-parser';
+const WordsNinjaPack = require('wordsninja');
+
+// Global WordsNinja instance
+let wordsNinja: any = null;
+
+// Initialize WordsNinja (lazy loading)
+async function initWordSegmentation() {
+  if (!wordsNinja) {
+    wordsNinja = new WordsNinjaPack();
+    await wordsNinja.loadDictionary();
+  }
+  return wordsNinja;
+}
+
+// Segment merged words in text
+async function segmentMergedWords(text: string): Promise<string> {
+  if (!text || text.length < 10) return text;
+  
+  try {
+    const ninja = await initWordSegmentation();
+    
+    // Split text into words and process each potential merged word
+    const words = text.split(/\s+/);
+    const processedWords = [];
+    
+    for (const word of words) {
+      // Only process words longer than 12 characters (likely merged)
+      if (word.length > 12 && /^[a-zA-Z]+$/.test(word)) {
+        try {
+          const segmented = ninja.splitSentence(word.toLowerCase());
+          if (segmented && segmented.length > 1) {
+            // Successfully segmented, join with spaces
+            processedWords.push(segmented.join(' '));
+          } else {
+            // Couldn't segment, keep original
+            processedWords.push(word);
+          }
+        } catch (error) {
+          // Error in segmentation, keep original word
+          processedWords.push(word);
+        }
+      } else {
+        // Word is normal length or contains non-letters, keep as is
+        processedWords.push(word);
+      }
+    }
+    
+    return processedWords.join(' ');
+  } catch (error) {
+    // If segmentation fails, return original text
+    console.warn('Word segmentation failed:', error);
+    return text;
+  }
+}
 
 // Convert URL content using jina.ai
 export async function convertWithJina(url: string): Promise<string> {
@@ -19,7 +73,7 @@ export async function convertWithJina(url: string): Promise<string> {
 }
 
 // Extract text content from HTML string
-export function extractTextFromHtml(htmlContent: string): string {
+export async function extractTextFromHtml(htmlContent: string): Promise<string> {
   if (!htmlContent?.trim()) {
     return '';
   }
@@ -34,13 +88,16 @@ export function extractTextFromHtml(htmlContent: string): string {
   const bodyText = root.querySelector('body')?.text || root.text || '';
   
   // Clean up whitespace while preserving word boundaries
-  const cleanText = bodyText
+  let cleanText = bodyText
     .replace(/\r\n/g, '\n')  // Normalize line breaks
     .replace(/\r/g, '\n')   // Convert remaining carriage returns
     .replace(/\n+/g, ' ')   // Convert line breaks to spaces
     .replace(/\s+/g, ' ')   // Collapse multiple spaces to single spaces
     .replace(/(\w)([A-Z])/g, '$1 $2')  // Add space before capital letters if missing
     .trim();
+  
+  // Apply word segmentation to fix merged words
+  cleanText = await segmentMergedWords(cleanText);
   
   return title ? `${title}\n\n${cleanText}` : cleanText;
 }
@@ -215,7 +272,7 @@ export async function convertUrlToText(url: string, category?: string): Promise<
       }
       
       const html = await response.text();
-      return extractTextFromHtml(html);
+      return await extractTextFromHtml(html);
     }
   } catch (error) {
     console.warn('Error converting URL to text:', error);

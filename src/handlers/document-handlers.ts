@@ -113,7 +113,7 @@ export async function handleListDocuments(args: any) {
               rawContent = await convertUrlToText(urlToConvert, doc.category);
             }
           } else {
-            rawContent = extractTextFromHtml(doc.html_content);
+            rawContent = await extractTextFromHtml(doc.html_content);
           }
         } else {
           // Fallback to URL fetching if no HTML content available
