@@ -1,7 +1,7 @@
 {
-  "name": "readwise-reader-mcp",
+  "name": "readwise-mcp-enhanced",
   "version": "1.0.0",
-  "description": "MCP server for Readwise Reader API",
+  "description": "Enhanced MCP server unifying Readwise Reader + Highlights with AI-powered text processing and context optimization",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {

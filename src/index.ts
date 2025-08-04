@@ -11,7 +11,7 @@ import { handleToolCall } from './handlers/index.js';
 
 const server = new Server(
   {
-    name: 'readwise-reader-mcp',
+    name: 'readwise-mcp-enhanced',
     version: '1.0.0',
   },
   {
