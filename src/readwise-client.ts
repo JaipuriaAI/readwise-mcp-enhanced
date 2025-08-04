@@ -7,11 +7,25 @@ import {
   ReadwiseTag,
   ReadwiseConfig,
   APIResponse,
-  APIMessage
+  APIMessage,
+  ReadwiseHighlight,
+  ReadwiseBook,
+  ListHighlightsParams,
+  ListHighlightsResponse,
+  CreateHighlightRequest,
+  ExportHighlightsParams,
+  ExportHighlightsResponse,
+  DailyReviewResponse,
+  ListBooksParams,
+  ListBooksResponse,
+  SearchHighlightsParams,
+  SearchHighlightsResult,
+  EnhancedTopicSearchResults
 } from './types.js';
 
 export class ReadwiseClient {
   private readonly baseUrl = 'https://readwise.io/api/v3';
+  private readonly v2BaseUrl = 'https://readwise.io/api/v2';
   private readonly authUrl = 'https://readwise.io/api/v2/auth/';
   private readonly token: string;
 
@@ -21,9 +35,11 @@ export class ReadwiseClient {
 
   private async makeRequest<T>(
     endpoint: string, 
-    options: RequestInit = {}
+    options: RequestInit = {},
+    useV2Api = false
   ): Promise<T> {
-    const url = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint}`;
+    const baseUrl = useV2Api ? this.v2BaseUrl : this.baseUrl;
+    const url = endpoint.startsWith('http') ? endpoint : `${baseUrl}${endpoint}`;
     
     const response = await fetch(url, {
       ...options,
@@ -278,6 +294,260 @@ export class ReadwiseClient {
       });
 
       return this.createResponse(matchingDocuments);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {
+        const seconds = parseInt(error.message.split(':')[1], 10);
+        throw new Error(`Rate limit exceeded. Too many requests. Please retry after ${seconds} seconds.`);
+      }
+      throw error;
+    }
+  }
+
+  // ========== HIGHLIGHTS API METHODS (v2) ==========
+
+  async listHighlights(params: ListHighlightsParams = {}): Promise<APIResponse<ListHighlightsResponse>> {
+    try {
+      const searchParams = new URLSearchParams();
+      
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.append(key, String(value));
+        }
+      });
+
+      const query = searchParams.toString();
+      const endpoint = `/highlights/${query ? `?${query}` : ''}`;
+      
+      const result = await this.makeRequest<ListHighlightsResponse>(endpoint, {}, true);
+      return this.createResponse(result);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {
+        const seconds = parseInt(error.message.split(':')[1], 10);
+        throw new Error(`Rate limit exceeded. Too many requests. Please retry after ${seconds} seconds.`);
+      }
+      throw error;
+    }
+  }
+
+  async createHighlight(data: CreateHighlightRequest): Promise<APIResponse<any>> {
+    try {
+      const result = await this.makeRequest<any>('/highlights/', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }, true);
+      return this.createResponse(result);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {
+        const seconds = parseInt(error.message.split(':')[1], 10);
+        throw new Error(`Rate limit exceeded. Too many requests. Please retry after ${seconds} seconds.`);
+      }
+      throw error;
+    }
+  }
+
+  async exportHighlights(params: ExportHighlightsParams = {}): Promise<APIResponse<ExportHighlightsResponse>> {
+    try {
+      const searchParams = new URLSearchParams();
+      
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.append(key, String(value));
+        }
+      });
+
+      const query = searchParams.toString();
+      const endpoint = `/export/${query ? `?${query}` : ''}`;
+      
+      const result = await this.makeRequest<ExportHighlightsResponse>(endpoint, {}, true);
+      return this.createResponse(result);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {
+        const seconds = parseInt(error.message.split(':')[1], 10);
+        throw new Error(`Rate limit exceeded. Too many requests. Please retry after ${seconds} seconds.`);
+      }
+      throw error;
+    }
+  }
+
+  async getDailyReview(): Promise<APIResponse<DailyReviewResponse>> {
+    try {
+      const result = await this.makeRequest<DailyReviewResponse>('/review/', {}, true);
+      return this.createResponse(result);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {
+        const seconds = parseInt(error.message.split(':')[1], 10);
+        throw new Error(`Rate limit exceeded. Too many requests. Please retry after ${seconds} seconds.`);
+      }
+      throw error;
+    }
+  }
+
+  async listBooks(params: ListBooksParams = {}): Promise<APIResponse<ListBooksResponse>> {
+    try {
+      const searchParams = new URLSearchParams();
+      
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.append(key, String(value));
+        }
+      });
+
+      const query = searchParams.toString();
+      const endpoint = `/books/${query ? `?${query}` : ''}`;
+      
+      const result = await this.makeRequest<ListBooksResponse>(endpoint, {}, true);
+      return this.createResponse(result);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {
+        const seconds = parseInt(error.message.split(':')[1], 10);
+        throw new Error(`Rate limit exceeded. Too many requests. Please retry after ${seconds} seconds.`);
+      }
+      throw error;
+    }
+  }
+
+  async getBookHighlights(bookId: number): Promise<APIResponse<ReadwiseHighlight[]>> {
+    try {
+      const result = await this.listHighlights({ book_id: bookId, page_size: 1000 });
+      return this.createResponse(result.data.results);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {
+        const seconds = parseInt(error.message.split(':')[1], 10);
+        throw new Error(`Rate limit exceeded. Too many requests. Please retry after ${seconds} seconds.`);
+      }
+      throw error;
+    }
+  }
+
+  async searchHighlights(params: SearchHighlightsParams): Promise<APIResponse<SearchHighlightsResult[]>> {
+    try {
+      const results: SearchHighlightsResult[] = [];
+      
+      // Strategy: Use export API for comprehensive search across all data
+      const exportResponse = await this.exportHighlights();
+      const books = exportResponse.data.results;
+      
+      // Search through exported data
+      for (const book of books) {
+        // Filter by bookId if specified
+        if (params.bookId && book.id !== params.bookId) continue;
+        
+        for (const highlight of book.highlights) {
+          let score = 0;
+          const matchedFields: string[] = [];
+          
+          // Text query search (main search term)
+          if (params.textQuery) {
+            const query = params.textQuery.toLowerCase();
+            if (highlight.text.toLowerCase().includes(query)) {
+              score += 10;
+              matchedFields.push('highlight_text');
+            }
+            if (highlight.note?.toLowerCase().includes(query)) {
+              score += 8;
+              matchedFields.push('highlight_note');
+            }
+            if (book.title.toLowerCase().includes(query)) {
+              score += 6;
+              matchedFields.push('document_title');
+            }
+            if (book.author.toLowerCase().includes(query)) {
+              score += 4;
+              matchedFields.push('document_author');
+            }
+          }
+          
+          // Field-specific queries
+          if (params.fieldQueries) {
+            for (const fieldQuery of params.fieldQueries) {
+              const searchTerm = fieldQuery.searchTerm.toLowerCase();
+              
+              switch (fieldQuery.field) {
+                case 'document_title':
+                  if (book.title.toLowerCase().includes(searchTerm)) {
+                    score += 8;
+                    matchedFields.push('document_title');
+                  }
+                  break;
+                case 'document_author':
+                  if (book.author.toLowerCase().includes(searchTerm)) {
+                    score += 8;
+                    matchedFields.push('document_author');
+                  }
+                  break;
+                case 'highlight_text':
+                  if (highlight.text.toLowerCase().includes(searchTerm)) {
+                    score += 10;
+                    matchedFields.push('highlight_text');
+                  }
+                  break;
+                case 'highlight_note':
+                  if (highlight.note?.toLowerCase().includes(searchTerm)) {
+                    score += 8;
+                    matchedFields.push('highlight_note');
+                  }
+                  break;
+                case 'highlight_tags':
+                  if (highlight.tags.some(tag => tag.name.toLowerCase().includes(searchTerm))) {
+                    score += 6;
+                    matchedFields.push('highlight_tags');
+                  }
+                  break;
+              }
+            }
+          }
+          
+          // If we have matches, add to results
+          if (score > 0) {
+            const { highlights, ...bookWithoutHighlights } = book;
+            results.push({
+              highlight,
+              book: bookWithoutHighlights,
+              score,
+              matchedFields: [...new Set(matchedFields)] // Remove duplicates
+            });
+          }
+        }
+      }
+      
+      // Sort by score and apply limit
+      results.sort((a, b) => b.score - a.score);
+      const limitedResults = params.limit ? results.slice(0, params.limit) : results;
+      
+      return this.createResponse(limitedResults);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {
+        const seconds = parseInt(error.message.split(':')[1], 10);
+        throw new Error(`Rate limit exceeded. Too many requests. Please retry after ${seconds} seconds.`);
+      }
+      throw error;
+    }
+  }
+
+  // Enhanced topic search that includes highlights
+  async searchDocumentsAndHighlights(searchTerms: string[]): Promise<APIResponse<EnhancedTopicSearchResults>> {
+    try {
+      // Get documents (existing functionality)
+      const documentsResponse = await this.searchDocumentsByTopic(searchTerms);
+      
+      // Search highlights using the same terms
+      const highlightsResponse = await this.searchHighlights({
+        textQuery: searchTerms.join(' '),
+        limit: 50
+      });
+      
+      // Get relevant books
+      const bookIds = [...new Set(highlightsResponse.data.map(result => result.book.id))];
+      const booksResponse = await this.listBooks({ page_size: Math.min(bookIds.length, 100) });
+      const relevantBooks = booksResponse.data.results.filter(book => bookIds.includes(book.id));
+      
+      const results: EnhancedTopicSearchResults = {
+        documents: documentsResponse.data,
+        highlights: highlightsResponse.data,
+        books: relevantBooks
+      };
+      
+      return this.createResponse(results);
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {
         const seconds = parseInt(error.message.split(':')[1], 10);

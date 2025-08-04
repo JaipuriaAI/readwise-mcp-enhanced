@@ -83,3 +83,141 @@ export interface APIResponse<T> {
   data: T;
   messages?: APIMessage[];
 }
+
+// Highlights-specific types (Readwise API v2)
+export interface ReadwiseHighlight {
+  id: number;
+  text: string;
+  note?: string;
+  location?: number;
+  location_type: 'page' | 'order' | 'time_offset';
+  highlighted_at?: string;
+  url?: string;
+  color: 'yellow' | 'blue' | 'pink' | 'orange' | 'green' | 'purple';
+  updated: string;
+  book_id: number;
+  tags: ReadwiseTag[];
+}
+
+export interface ReadwiseBook {
+  id: number;
+  user_book_id: number;
+  title: string;
+  author: string;
+  readable_title: string;
+  source: string;
+  cover_image_url?: string;
+  unique_url?: string;
+  book_tags: ReadwiseTag[];
+  category: 'books' | 'articles' | 'tweets' | 'podcasts' | 'supplementals';
+  document_note?: string;
+  summary?: string;
+  readwise_url: string;
+  source_url?: string;
+  asin?: string;
+  num_highlights: number;
+  last_highlight_at?: string;
+  updated: string;
+  highlights: ReadwiseHighlight[];
+}
+
+export interface ListHighlightsParams {
+  page_size?: number;
+  page?: number;
+  book_id?: number;
+  updated__lt?: string;
+  updated__gt?: string;
+  highlighted_at__lt?: string;
+  highlighted_at__gt?: string;
+}
+
+export interface ListHighlightsResponse {
+  count: number;
+  next?: string;
+  previous?: string;
+  results: ReadwiseHighlight[];
+}
+
+export interface CreateHighlightRequest {
+  highlights: Array<{
+    text: string;
+    title?: string;
+    author?: string;
+    image_url?: string;
+    source_url?: string;
+    source_type?: string;
+    category?: 'books' | 'articles' | 'tweets' | 'podcasts';
+    note?: string;
+    location?: number;
+    location_type?: 'page' | 'order' | 'time_offset';
+    highlighted_at?: string;
+    highlight_url?: string;
+  }>;
+}
+
+export interface ExportHighlightsParams {
+  updatedAfter?: string;
+  ids?: string;
+  includeDeleted?: boolean;
+  pageCursor?: string;
+}
+
+export interface ExportHighlightsResponse {
+  count: number;
+  nextPageCursor?: string;
+  results: ReadwiseBook[];
+}
+
+export interface DailyReviewResponse {
+  review_id: number;
+  review_url: string;
+  review_completed: boolean;
+  highlights: Array<ReadwiseHighlight & {
+    title: string;
+    author: string;
+    source_type: string;
+    image_url?: string;
+  }>;
+}
+
+export interface ListBooksParams {
+  page_size?: number;
+  page?: number;
+  category?: 'books' | 'articles' | 'tweets' | 'supplementals' | 'podcasts';
+  source?: string;
+  updated__lt?: string;
+  updated__gt?: string;
+  last_highlight_at__lt?: string;
+  last_highlight_at__gt?: string;
+}
+
+export interface ListBooksResponse {
+  count: number;
+  next?: string;
+  previous?: string;
+  results: Omit<ReadwiseBook, 'highlights'>[];
+}
+
+export interface SearchHighlightsParams {
+  textQuery?: string;
+  fieldQueries?: Array<{
+    field: 'document_title' | 'document_author' | 'highlight_text' | 'highlight_note' | 'highlight_tags';
+    searchTerm: string;
+  }>;
+  bookId?: number;
+  limit?: number;
+}
+
+export interface SearchHighlightsResult {
+  highlight: ReadwiseHighlight;
+  book: Omit<ReadwiseBook, 'highlights'>;
+  score: number;
+  matchedFields: string[];
+}
+
+// Enhanced search results for topic search
+export interface EnhancedTopicSearchResults {
+  documents: ReadwiseDocument[];
+  highlights?: SearchHighlightsResult[];
+  books?: Omit<ReadwiseBook, 'highlights'>[];
+}

@@ -186,4 +186,241 @@ export const tools: Tool[] = [
       additionalProperties: false,
     },
   },
+  // ========== HIGHLIGHTS TOOLS ==========
+  {
+    name: 'readwise_list_highlights',
+    description: 'List highlights from Readwise with optional filtering by book, date, or other criteria',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page_size: {
+          type: 'number',
+          description: 'Number of results per page (default: 100, max: 1000)',
+        },
+        page: {
+          type: 'number',
+          description: 'Page number for pagination',
+        },
+        book_id: {
+          type: 'number',
+          description: 'Filter highlights by specific book ID',
+        },
+        updated__lt: {
+          type: 'string',
+          description: 'Filter highlights updated before this date (ISO 8601)',
+        },
+        updated__gt: {
+          type: 'string',
+          description: 'Filter highlights updated after this date (ISO 8601)',
+        },
+        highlighted_at__lt: {
+          type: 'string',
+          description: 'Filter highlights made before this date (ISO 8601)',
+        },
+        highlighted_at__gt: {
+          type: 'string',
+          description: 'Filter highlights made after this date (ISO 8601)',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'readwise_create_highlight',
+    description: 'Create new highlights manually in Readwise',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        highlights: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              text: {
+                type: 'string',
+                description: 'The highlight text (required)',
+              },
+              title: {
+                type: 'string',
+                description: 'Title of the source book/article',
+              },
+              author: {
+                type: 'string',
+                description: 'Author of the source',
+              },
+              source_url: {
+                type: 'string',
+                description: 'URL of the original source',
+              },
+              source_type: {
+                type: 'string',
+                description: 'Unique identifier for your app/source',
+              },
+              category: {
+                type: 'string',
+                enum: ['books', 'articles', 'tweets', 'podcasts'],
+                description: 'Category of the source',
+              },
+              note: {
+                type: 'string',
+                description: 'Personal note or annotation for the highlight',
+              },
+              location: {
+                type: 'number',
+                description: 'Location in the source (page number, position, etc.)',
+              },
+              location_type: {
+                type: 'string',
+                enum: ['page', 'order', 'time_offset'],
+                description: 'Type of location reference',
+              },
+              highlighted_at: {
+                type: 'string',
+                description: 'When the highlight was made (ISO 8601)',
+              },
+            },
+            required: ['text'],
+          },
+          description: 'Array of highlights to create',
+          minItems: 1,
+        },
+      },
+      required: ['highlights'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'readwise_export_highlights',
+    description: 'Export all highlights from Readwise with optional filtering. Perfect for bulk analysis or backup.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        updatedAfter: {
+          type: 'string',
+          description: 'Only export highlights updated after this date (ISO 8601) - useful for incremental sync',
+        },
+        ids: {
+          type: 'string',
+          description: 'Comma-separated list of book IDs to export highlights from',
+        },
+        includeDeleted: {
+          type: 'boolean',
+          description: 'Include deleted highlights in export (default: false)',
+        },
+        pageCursor: {
+          type: 'string',  
+          description: 'Cursor for pagination through large exports',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'readwise_get_daily_review',
+    description: 'Get your daily review highlights for spaced repetition learning',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'readwise_list_books',
+    description: 'List books that have highlights in Readwise with optional filtering',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page_size: {
+          type: 'number',
+          description: 'Number of results per page (default: 100, max: 1000)',
+        },
+        page: {
+          type: 'number',
+          description: 'Page number for pagination',
+        },
+        category: {
+          type: 'string',
+          enum: ['books', 'articles', 'tweets', 'supplementals', 'podcasts'],
+          description: 'Filter books by category',
+        },
+        source: {
+          type: 'string',
+          description: 'Filter books by source',
+        },
+        updated__lt: {
+          type: 'string',
+          description: 'Filter books updated before this date (ISO 8601)',
+        },
+        updated__gt: {
+          type: 'string',
+          description: 'Filter books updated after this date (ISO 8601)',
+        },
+        last_highlight_at__lt: {
+          type: 'string',
+          description: 'Filter books with last highlight before this date (ISO 8601)',
+        },
+        last_highlight_at__gt: {
+          type: 'string',
+          description: 'Filter books with last highlight after this date (ISO 8601)',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'readwise_get_book_highlights',
+    description: 'Get all highlights from a specific book',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        bookId: {
+          type: 'number',
+          description: 'The ID of the book to get highlights from',
+        },
+      },
+      required: ['bookId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'readwise_search_highlights',
+    description: 'Advanced search across all highlights using text queries and field-specific filters. Equivalent to official Readwise MCP search functionality.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        textQuery: {
+          type: 'string',
+          description: 'Main text to search for across all highlight content (like vector_search_term)',
+        },
+        fieldQueries: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              field: {
+                type: 'string',
+                enum: ['document_title', 'document_author', 'highlight_text', 'highlight_note', 'highlight_tags'],
+                description: 'Field to search in',
+              },
+              searchTerm: {
+                type: 'string',
+                description: 'Term to search for in the specified field',
+              },
+            },
+            required: ['field', 'searchTerm'],
+          },
+          description: 'Specific field searches (like full_text_queries)',
+        },
+        bookId: {
+          type: 'number',
+          description: 'Filter results to specific book',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of results to return',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
 ]; 
