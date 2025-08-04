@@ -1,5 +1,6 @@
 import { parse } from 'node-html-parser';
-const WordsNinjaPack = require('wordsninja');
+// @ts-ignore - wordsninja doesn't have TypeScript declarations
+import WordsNinjaPack from 'wordsninja';
 
 // Global WordsNinja instance
 let wordsNinja: any = null;
