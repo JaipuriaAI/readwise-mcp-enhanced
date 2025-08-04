@@ -79,6 +79,23 @@ export const tools: Tool[] = [
           type: 'boolean',
           description: '⚠️ PERFORMANCE WARNING: Include full converted text content in the response. This significantly slows down the API as it fetches and processes each document\'s content. Only use when explicitly requested by the user or when document content is specifically needed for analysis/reading. Default: false for performance.',
         },
+        contentMaxLength: {
+          type: 'number',
+          description: 'Maximum length of content to include per document (in characters). Default: 50000. Use with withFullContent=true to prevent token limit issues.',
+        },
+        contentStartOffset: {
+          type: 'number',
+          description: 'Character offset to start content extraction from. Use with contentMaxLength for pagination through large documents. Default: 0.',
+        },
+        contentFilterKeywords: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Filter content to include only sections containing these keywords (case-insensitive). Useful for extracting specific topics from large documents.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of documents to return. Use this to prevent token limit issues when requesting multiple documents with content.',
+        },
       },
       additionalProperties: false,
     },

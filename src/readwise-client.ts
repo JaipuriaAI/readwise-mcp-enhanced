@@ -91,9 +91,12 @@ export class ReadwiseClient {
 
   async listDocuments(params: ListDocumentsParams = {}): Promise<APIResponse<ListDocumentsResponse>> {
     try {
+      // Extract client-side only parameters
+      const { limit, contentMaxLength, contentStartOffset, contentFilterKeywords, ...apiParams } = params;
+
       // If withFullContent is requested, first check the document count
       if (params.withFullContent) {
-        const countParams = { ...params };
+        const countParams = { ...apiParams };
         delete countParams.withFullContent;
         delete countParams.withHtmlContent; // Also remove HTML content for the count check
         
@@ -109,12 +112,13 @@ export class ReadwiseClient {
         
         const countResponse = await this.makeRequest<ListDocumentsResponse>(countEndpoint);
         
-        if (countResponse.count > 5) {
-          // Get first 5 documents with full content
-          const limitedParams = { ...params, limit: 5 };
+        const userLimit = limit || 5; // Use user's limit or default to 5
+        if (countResponse.count > userLimit) {
+          // Get limited documents with full content
+          const limitedApiParams = { ...apiParams };
           const searchParams = new URLSearchParams();
           
-          Object.entries(limitedParams).forEach(([key, value]) => {
+          Object.entries(limitedApiParams).forEach(([key, value]) => {
             if (value !== undefined) {
               searchParams.append(key, String(value));
             }
@@ -125,27 +129,36 @@ export class ReadwiseClient {
           
           const result = await this.makeRequest<ListDocumentsResponse>(endpoint);
           
+          // Apply client-side limit
+          const limitedResults = result.results.slice(0, userLimit);
+          const limitedResponse = {
+            ...result,
+            results: limitedResults,
+            count: limitedResults.length
+          };
+          
           let message: APIMessage;
           if (countResponse.count <= 20) {
             message = this.createInfoMessage(
-              `Found ${countResponse.count} documents, but only returning the first 5 due to full content request. ` +
-              `To get the remaining ${countResponse.count - 5} documents with full content, ` +
+              `Found ${countResponse.count} documents, but only returning the first ${userLimit} due to full content request. ` +
+              `To get the remaining ${countResponse.count - userLimit} documents with full content, ` +
               `you can fetch them individually by their IDs using the update/read document API.`
             );
           } else {
             message = this.createErrorMessage(
-              `Found ${countResponse.count} documents, but only returning the first 5 due to full content request. ` +
+              `Found ${countResponse.count} documents, but only returning the first ${userLimit} due to full content request. ` +
               `Getting full content for more than 20 documents is not supported due to performance limitations.`
             );
           }
           
-          return this.createResponse(result, [message]);
+          return this.createResponse(limitedResponse, [message]);
         }
       }
 
       const searchParams = new URLSearchParams();
       
-      Object.entries(params).forEach(([key, value]) => {
+      // Only pass API-supported parameters to the Readwise API
+      Object.entries(apiParams).forEach(([key, value]) => {
         if (value !== undefined) {
           searchParams.append(key, String(value));
         }
@@ -155,6 +168,18 @@ export class ReadwiseClient {
       const endpoint = `/list/${query ? `?${query}` : ''}`;
       
       const result = await this.makeRequest<ListDocumentsResponse>(endpoint);
+      
+      // Apply client-side limit if specified
+      if (limit && limit > 0) {
+        const limitedResults = result.results.slice(0, limit);
+        const limitedResponse = {
+          ...result,
+          results: limitedResults,
+          count: limitedResults.length
+        };
+        return this.createResponse(limitedResponse);
+      }
+      
       return this.createResponse(result);
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {

@@ -54,6 +54,9 @@ export interface ListDocumentsParams {
   withHtmlContent?: boolean;
   withFullContent?: boolean;
   limit?: number;
+  contentMaxLength?: number;
+  contentStartOffset?: number;
+  contentFilterKeywords?: string[];
 }
 
 export interface ListDocumentsResponse {

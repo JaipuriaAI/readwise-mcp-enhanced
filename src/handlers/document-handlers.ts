@@ -1,6 +1,6 @@
 import { CreateDocumentRequest, UpdateDocumentRequest, ListDocumentsParams } from '../types.js';
 import { initializeClient } from '../utils/client-init.js';
-import { convertUrlToText, extractTextFromHtml } from '../utils/content-converter.js';
+import { convertUrlToText, extractTextFromHtml, processContentWithOptions } from '../utils/content-converter.js';
 
 export async function handleSaveDocument(args: any) {
   const client = initializeClient();
@@ -93,10 +93,16 @@ export async function handleListDocuments(args: any) {
 
   // Convert content to LLM-friendly text for documents only if withFullContent is explicitly true
   const shouldIncludeContent = params.withFullContent === true; // Default to false for performance
+  
+  // Process documents with content if needed
   const documentsWithText = await Promise.all(
     response.data.results.map(async (doc) => {
       let content = '';
+      let contentMetadata: any = {};
+      
       if (shouldIncludeContent) {
+        let rawContent = '';
+        
         // Try to use HTML content first (from Readwise), fallback to URL fetching
         if (doc.html_content) {
           // Use HTML content from Readwise for non-jina content types
@@ -104,16 +110,49 @@ export async function handleListDocuments(args: any) {
           if (shouldUseJina) {
             const urlToConvert = doc.source_url || doc.url;
             if (urlToConvert) {
-              content = await convertUrlToText(urlToConvert, doc.category);
+              rawContent = await convertUrlToText(urlToConvert, doc.category);
             }
           } else {
-            content = extractTextFromHtml(doc.html_content);
+            rawContent = extractTextFromHtml(doc.html_content);
           }
         } else {
           // Fallback to URL fetching if no HTML content available
           const urlToConvert = doc.source_url || doc.url;
           if (urlToConvert) {
-            content = await convertUrlToText(urlToConvert, doc.category);
+            rawContent = await convertUrlToText(urlToConvert, doc.category);
+          }
+        }
+        
+        // Process content with pagination and filtering options
+        if (rawContent) {
+          const processResult = processContentWithOptions(rawContent, {
+            maxLength: params.contentMaxLength,
+            startOffset: params.contentStartOffset,
+            filterKeywords: params.contentFilterKeywords
+          });
+          
+          content = processResult.content;
+          contentMetadata = {
+            contentTruncated: processResult.truncated,
+            contentTotalLength: processResult.totalLength,
+            contentExtractedSections: processResult.extractedSections?.length || 0,
+            // Include debug info in response
+            ...(processResult.debug && { contentDebug: processResult.debug })
+          };
+          
+          // Add helpful metadata for users
+          if (processResult.truncated) {
+            contentMetadata.contentNote = `Content truncated. Original length: ${processResult.totalLength} chars. ` +
+              `To get more content, use contentStartOffset=${(params.contentStartOffset || 0) + (params.contentMaxLength || 50000)}`;
+          }
+          
+          if (params.contentFilterKeywords && params.contentFilterKeywords.length > 0) {
+            contentMetadata.contentKeywordsUsed = params.contentFilterKeywords;
+            
+            // If no content found after filtering, add a helpful note
+            if (!processResult.extractedSections || processResult.extractedSections.length === 0) {
+              contentMetadata.contentFilterNote = `No content sections found containing the keywords: ${params.contentFilterKeywords.join(', ')}`;
+            }
           }
         }
       }
@@ -142,6 +181,7 @@ export async function handleListDocuments(args: any) {
         last_opened_at: doc.last_opened_at,
         saved_at: doc.saved_at,
         last_moved_at: doc.last_moved_at,
+        ...contentMetadata, // Add content processing metadata
       };
       
       if (shouldIncludeContent) {
@@ -156,11 +196,54 @@ export async function handleListDocuments(args: any) {
     })
   );
 
-  let responseText = JSON.stringify({
-    count: response.data.count,
-    nextPageCursor: response.data.nextPageCursor,
-    documents: documentsWithText
-  }, null, 2);
+  // Create a summary response to avoid token limits
+  let responseText = '';
+  
+  if (shouldIncludeContent && (params.contentMaxLength || params.contentFilterKeywords)) {
+    // When content processing is involved, provide a more compact response
+    responseText = `Found ${response.data.count} document(s).\n\n`;
+    
+    documentsWithText.forEach((doc, index) => {
+      responseText += `Document ${index + 1}:\n`;
+      responseText += `Title: ${doc.title || 'Untitled'}\n`;
+      responseText += `Author: ${doc.author || 'Unknown'}\n`;
+      responseText += `Category: ${doc.category || 'Unknown'}\n`;
+      responseText += `URL: ${doc.url}\n`;
+      
+      if (doc.content) {
+        responseText += `\nContent (${doc.content.length} characters):\n${doc.content}\n`;
+      }
+      
+      if (doc.contentTruncated) {
+        responseText += `\n[Content was truncated. Original length: ${doc.contentTotalLength} chars]\n`;
+      }
+      
+      if (doc.contentFilterNote) {
+        responseText += `\n[${doc.contentFilterNote}]\n`;
+      }
+      
+      responseText += '\n' + '='.repeat(50) + '\n\n';
+    });
+    
+    if (response.data.nextPageCursor) {
+      responseText += `Next page cursor: ${response.data.nextPageCursor}\n`;
+    }
+  } else {
+    // For non-content requests, return compact JSON
+    responseText = JSON.stringify({
+      count: response.data.count,
+      nextPageCursor: response.data.nextPageCursor,
+      documents: documentsWithText.map(doc => ({
+        id: doc.id,
+        title: doc.title,
+        author: doc.author,
+        category: doc.category,
+        url: doc.url,
+        summary: doc.summary,
+        reading_progress: doc.reading_progress
+      }))
+    }, null, 2);
+  }
   
   let allMessages = response.messages || [];
   
@@ -169,6 +252,21 @@ export async function handleListDocuments(args: any) {
     allMessages.push({
       type: 'info',
       content: 'Documents were filtered client-side based on the addedAfter date. All documents were fetched from the API first, then filtered by their saved_at date.'
+    });
+  }
+  
+  // Add information about parameter usage
+  if (params.limit && params.limit > 0) {
+    allMessages.push({
+      type: 'info',
+      content: `Document limit of ${params.limit} was applied client-side after API response.`
+    });
+  }
+  
+  if (params.contentFilterKeywords && params.contentFilterKeywords.length > 0) {
+    allMessages.push({
+      type: 'info',
+      content: `Content was filtered for keywords: ${params.contentFilterKeywords.join(', ')}. Check individual documents for contentFilterNote if no matches found.`
     });
   }
   
@@ -226,4 +324,4 @@ export async function handleDeleteDocument(args: any) {
       },
     ],
   };
-} 
+}
