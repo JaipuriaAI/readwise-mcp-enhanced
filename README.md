@@ -43,13 +43,17 @@ A comprehensive Model Context Protocol (MCP) server that unifies **Readwise Read
 
 ## 🛠️ Installation
 
-### Option 1: NPM (Recommended)
+### Option 1: NPX - No Installation Required! (Recommended)
+
+No installation needed! Claude will automatically download and run the package using npx.
+
+### Option 2: Global NPM Installation
 
 ```bash
 npm install -g readwise-mcp-enhanced
 ```
 
-### Option 2: From Source
+### Option 3: From Source
 
 ```bash
 git clone https://github.com/arnaldo-delisio/readwise-mcp-enhanced.git
@@ -69,7 +73,22 @@ npm run build
    **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`  
    **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
-   #### If installed via npm:
+   #### Option A - Using npx (Recommended):
+   ```json
+   {
+     "mcpServers": {
+       "readwise-mcp-enhanced": {
+         "command": "npx",
+         "args": ["readwise-mcp-enhanced"],
+         "env": {
+           "READWISE_TOKEN": "your_readwise_access_token_here"
+         }
+       }
+     }
+   }
+   ```
+
+   #### Option B - If installed globally via npm:
    ```json
    {
      "mcpServers": {
@@ -83,7 +102,7 @@ npm run build
    }
    ```
 
-   #### If installed from source:
+   #### Option C - If installed from source:
    ```json
    {
      "mcpServers": {
