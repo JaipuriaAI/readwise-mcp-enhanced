@@ -1,5 +1,8 @@
 # Readwise MCP Enhanced
 
+[![npm version](https://badge.fury.io/js/readwise-mcp-enhanced.svg)](https://badge.fury.io/js/readwise-mcp-enhanced)
+[![npm downloads](https://img.shields.io/npm/dm/readwise-mcp-enhanced.svg)](https://www.npmjs.com/package/readwise-mcp-enhanced)
+
 A comprehensive Model Context Protocol (MCP) server that unifies **Readwise Reader** document management with **full Readwise highlights** functionality. Built with TypeScript, featuring advanced text processing, smart content controls, and context-optimized responses.
 
 ## 🚀 What This Is
@@ -40,7 +43,17 @@ A comprehensive Model Context Protocol (MCP) server that unifies **Readwise Read
 
 ## 🛠️ Installation
 
+### Option 1: NPM (Recommended)
+
 ```bash
+npm install -g readwise-mcp-enhanced
+```
+
+### Option 2: From Source
+
+```bash
+git clone https://github.com/arnaldo-delisio/readwise-mcp-enhanced.git
+cd readwise-mcp-enhanced
 npm install
 npm run build
 ```
@@ -49,19 +62,28 @@ npm run build
 
 ### With Claude Desktop
 
-1. **Build the server:**
-   ```bash
-   npm install
-   npm run build
-   ```
+1. **Get your Readwise token:** https://readwise.io/access_token
 
-2. **Get your Readwise token:** https://readwise.io/access_token
-
-3. **Add to Claude Desktop config:**
+2. **Add to Claude Desktop config:**
 
    **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`  
    **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
+   #### If installed via npm:
+   ```json
+   {
+     "mcpServers": {
+       "readwise-mcp-enhanced": {
+         "command": "readwise-mcp-enhanced",
+         "env": {
+           "READWISE_TOKEN": "your_readwise_access_token_here"
+         }
+       }
+     }
+   }
+   ```
+
+   #### If installed from source:
    ```json
    {
      "mcpServers": {
@@ -76,7 +98,7 @@ npm run build
    }
    ```
 
-4. **Restart Claude Desktop**
+3. **Restart Claude Desktop**
 
 ---
 
