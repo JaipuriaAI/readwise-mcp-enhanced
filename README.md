@@ -3,7 +3,7 @@
 [![npm version](https://badge.fury.io/js/readwise-mcp-enhanced.svg)](https://badge.fury.io/js/readwise-mcp-enhanced)
 [![npm downloads](https://img.shields.io/npm/dm/readwise-mcp-enhanced.svg)](https://www.npmjs.com/package/readwise-mcp-enhanced)
 
-A comprehensive Model Context Protocol (MCP) server that unifies **Readwise Reader** document management with **full Readwise highlights** functionality. Built with TypeScript, featuring advanced text processing, smart content controls, and context-optimized responses.
+A comprehensive Model Context Protocol (MCP) server that unifies **Readwise Reader** document management with **full Readwise highlights** functionality. Works with Claude Desktop, Continue, and any MCP-compatible AI tool. Built with TypeScript, featuring advanced text processing, smart content controls, and context-optimized responses.
 
 ## 🚀 What This Is
 
@@ -14,7 +14,7 @@ A comprehensive Model Context Protocol (MCP) server that unifies **Readwise Read
 - **Context Optimization** - 94% reduction in token usage while maintaining full functionality
 - **Smart Content Controls** - Prevent context explosion with advanced filtering and pagination
 
-**Equivalent to the official Readwise MCP** but more efficient and feature-complete.
+**Equivalent to the official Readwise MCP** but more efficient and feature-complete. Compatible with all MCP clients.
 
 ---
 
@@ -45,7 +45,7 @@ A comprehensive Model Context Protocol (MCP) server that unifies **Readwise Read
 
 ### Option 1: NPX - No Installation Required! (Recommended)
 
-No installation needed! Claude will automatically download and run the package using npx.
+No installation needed! Any MCP client will automatically download and run the package using npx.
 
 ### Option 2: Global NPM Installation
 
@@ -64,14 +64,21 @@ npm run build
 
 ## 🔧 Configuration
 
-### With Claude Desktop
+### With Any MCP-Compatible Tool
 
 1. **Get your Readwise token:** https://readwise.io/access_token
 
-2. **Add to Claude Desktop config:**
+2. **Add to your MCP client configuration:**
 
-   **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`  
-   **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+   **Claude Desktop:**  
+   - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`  
+   - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+   **Continue IDE Extension:**  
+   - Add to your Continue configuration file
+
+   **Other MCP Tools:**  
+   - Follow your tool's MCP server configuration instructions
 
    #### Option A - Using npx (Recommended):
    ```json
@@ -117,7 +124,7 @@ npm run build
    }
    ```
 
-3. **Restart Claude Desktop**
+3. **Restart your MCP client** (Claude Desktop, Continue, etc.)
 
 ---
 
@@ -335,7 +342,7 @@ v3 API: Reader documents, tags, search
 
 - **Single Token**: One Readwise token for both APIs
 - **Environment Variable**: Secure token storage via `READWISE_TOKEN`
-- **No Token Exposure**: Never exposed through Claude or tools interface
+- **No Token Exposure**: Never exposed through MCP clients or tools interface
 
 ---
 
