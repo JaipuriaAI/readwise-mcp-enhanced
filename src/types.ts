@@ -66,8 +66,14 @@ export interface ListDocumentsResponse {
 }
 
 export interface ReadwiseTag {
-  id: string;
+  key: string;
   name: string;
+}
+
+export interface ListTagsResponse {
+  count: number;
+  nextPageCursor?: string;
+  results: ReadwiseTag[];
 }
 
 export interface ReadwiseConfig {

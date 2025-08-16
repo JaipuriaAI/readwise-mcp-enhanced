@@ -5,6 +5,7 @@ import {
   ListDocumentsParams, 
   ListDocumentsResponse,
   ReadwiseTag,
+  ListTagsResponse,
   ReadwiseConfig,
   APIResponse,
   APIMessage,
@@ -239,8 +240,8 @@ export class ReadwiseClient {
 
   async listTags(): Promise<APIResponse<ReadwiseTag[]>> {
     try {
-      const result = await this.makeRequest<ReadwiseTag[]>('/tags/');
-      return this.createResponse(result);
+      const result = await this.makeRequest<ListTagsResponse>('/tags/');
+      return this.createResponse(result.results);
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('RATE_LIMIT:')) {
         const seconds = parseInt(error.message.split(':')[1], 10);
