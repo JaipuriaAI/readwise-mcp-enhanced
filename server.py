@@ -174,6 +174,207 @@ def extract_keywords_from_content(content: str, keywords: List[str]) -> str:
     
     return '. '.join(matching_sentences)
 
+# ========== RESOURCES (Direct Data Access) ==========
+
+@mcp.resource("readwise://books")
+async def books_resource() -> Dict[str, Any]:
+    """Direct access to all books list - cached for efficient LLM access"""
+    try:
+        cached_books = get_cached("books_resource")
+        if cached_books is not None:
+            return cached_books
+        
+        response = get_client().list_books(page_size=1000)
+        if response.data.get('results'):
+            optimized_books = []
+            for book in response.data['results']:
+                optimized_books.append({
+                    'id': book.get('id'),
+                    'title': book.get('title'),
+                    'author': book.get('author'),
+                    'category': book.get('category'),
+                    'num_highlights': book.get('num_highlights', 0)
+                })
+            
+            result = {"books": optimized_books, "total": len(optimized_books)}
+            set_cache("books_resource", result)
+            return result
+        return {"books": [], "total": 0}
+    except Exception as e:
+        return {"error": str(e)}
+
+@mcp.resource("readwise://tags")
+async def tags_resource() -> Dict[str, Any]:
+    """Direct access to all document tags - cached for efficient LLM access"""
+    try:
+        cached_tags = get_cached("tags_resource") 
+        if cached_tags is not None:
+            return cached_tags
+            
+        response = get_client().list_tags()
+        result = {"tags": response.data, "total": len(response.data)}
+        set_cache("tags_resource", result)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+@mcp.resource("readwise://books/{book_id}/highlights")
+async def book_highlights_resource(book_id: int) -> Dict[str, Any]:
+    """Resource template: Direct access to highlights for a specific book ID"""
+    try:
+        cache_key = f"book_highlights_{book_id}"
+        cached = get_cached(cache_key)
+        if cached is not None:
+            return cached
+            
+        response = get_client().get_book_highlights(book_id)
+        result = {
+            "book_id": book_id,
+            "highlights": response.data,
+            "total": len(response.data) if response.data else 0
+        }
+        set_cache(cache_key, result)
+        return result
+    except Exception as e:
+        return {"error": str(e), "book_id": book_id}
+
+@mcp.resource("readwise://search/books/{query}")
+async def search_books_resource(query: str) -> Dict[str, Any]:
+    """Resource template: Search books by title/author query"""
+    try:
+        cache_key = f"search_books_{hash(query)}"
+        cached = get_cached(cache_key)
+        if cached is not None:
+            return cached
+            
+        # Get all books and filter
+        books_data = await books_resource()
+        if "error" in books_data:
+            return books_data
+            
+        query_lower = query.lower()
+        matching_books = []
+        
+        for book in books_data["books"]:
+            title_match = query_lower in book.get('title', '').lower()
+            author_match = query_lower in book.get('author', '').lower()
+            if title_match or author_match:
+                matching_books.append(book)
+        
+        result = {
+            "query": query,
+            "matching_books": matching_books,
+            "total": len(matching_books)
+        }
+        set_cache(cache_key, result)
+        return result
+    except Exception as e:
+        return {"error": str(e), "query": query}
+
+@mcp.resource("readwise://documents/recent")
+async def recent_documents_resource() -> Dict[str, Any]:
+    """Direct access to recently added documents"""
+    try:
+        cached = get_cached("recent_documents")
+        if cached is not None:
+            return cached
+            
+        response = get_client().list_documents(page_size=50)
+        result = {
+            "documents": response.data.get('results', []),
+            "total": len(response.data.get('results', []))
+        }
+        set_cache("recent_documents", result)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+# ========== PROMPTS (Query Templates) ==========
+
+@mcp.prompt
+def analyze_book_highlights(book_title: str, focus_area: str = "key insights") -> str:
+    """Generate analysis prompt for book highlights with specific focus"""
+    return f"""Analyze the highlights from "{book_title}" focusing on {focus_area}.
+
+Please:
+1. Identify the main themes and concepts
+2. Extract actionable insights and practical advice
+3. Summarize the key takeaways in 3-5 bullet points
+4. Suggest how these insights could be applied
+
+Focus specifically on {focus_area} throughout your analysis."""
+
+@mcp.prompt  
+def create_reading_summary(book_title: str, highlight_count: int) -> str:
+    """Generate comprehensive reading summary prompt"""
+    return f"""Create a comprehensive reading summary for "{book_title}" based on {highlight_count} highlights.
+
+Structure your summary as:
+## Key Concepts
+- Main ideas and themes
+
+## Important Insights  
+- Notable quotes and insights
+- Author's core arguments
+
+## Practical Applications
+- How to apply these ideas
+- Actionable steps
+
+## Personal Reflection
+- What resonated most
+- Questions for further exploration
+
+Make this summary useful for future reference and sharing with others."""
+
+@mcp.prompt
+def find_book_insights(topic: str, books_available: str) -> str:
+    """Generate prompt to find insights across multiple books on a topic"""
+    return f"""Search through the available books for insights related to "{topic}".
+
+Available books: {books_available}
+
+Please:
+1. Identify which books likely contain relevant information about {topic}
+2. Look for highlights that discuss {topic} directly or indirectly  
+3. Compare and contrast different perspectives on {topic}
+4. Synthesize the key insights into a coherent overview
+
+Focus on finding connections and patterns across different authors and sources."""
+
+@mcp.prompt
+def daily_review_reflection(highlights_count: int) -> str:
+    """Generate reflection prompt for daily review highlights"""
+    return f"""Reflect on today's {highlights_count} review highlights for spaced repetition learning.
+
+For each highlight, consider:
+1. **Recall**: Can I remember the context and source?
+2. **Relevance**: How does this apply to my current goals?
+3. **Connection**: What other ideas does this relate to?
+4. **Action**: What specific step can I take based on this insight?
+
+End with 2-3 key insights you want to remember and act on today."""
+
+@mcp.prompt
+def research_topic_across_library(research_topic: str, max_sources: int = 5) -> str:
+    """Generate research prompt for exploring a topic across the entire library"""
+    return f"""Research "{research_topic}" across my entire Readwise library.
+
+Research approach:
+1. **Book Discovery**: Find up to {max_sources} books that likely contain information about {research_topic}
+2. **Highlight Extraction**: Gather relevant highlights from these books
+3. **Pattern Analysis**: Look for common themes, contradictions, and unique perspectives
+4. **Evidence Synthesis**: Combine insights into a comprehensive overview
+
+Deliverable: Create a research summary that includes:
+- Key definitions and concepts
+- Different expert perspectives  
+- Supporting evidence and examples
+- Open questions for further exploration
+- Recommended next reading
+
+Focus on depth and connections rather than breadth."""
+
 # ========== READER TOOLS (6) ==========
 
 @mcp.tool(
