@@ -10,7 +10,7 @@ Enhanced MCP server unifying Readwise Reader + Highlights with AI-powered text p
 - **Performance Controls**: Built-in warnings and guidance for expensive operations
 - **Flexible Filtering**: By location, category, tags, dates, and custom criteria
 
-### 🎯 **Complete Highlights Ecosystem (7 tools)**  
+### 🎯 **Complete Highlights Ecosystem (8 tools)**
 - **Daily Reviews**: Spaced repetition learning system
 - **Advanced Search**: Field-specific queries with relevance scoring
 - **Book Management**: Full metadata with highlight counts and filtering
@@ -23,7 +23,7 @@ Enhanced MCP server unifying Readwise Reader + Highlights with AI-powered text p
 - **Unlimited Results**: No artificial limits, just efficient data per item
 - **MCP Protocol Compliant**: Proper logging, error handling, and rate limiting
 
-## Available Tools (13 Total)
+## Available Tools (14 Total)
 
 ### Reader Tools (6)
 1. `readwise_save_document` - Save documents with full metadata control
@@ -33,14 +33,15 @@ Enhanced MCP server unifying Readwise Reader + Highlights with AI-powered text p
 5. `readwise_list_tags` - Get all document tags
 6. `readwise_topic_search` - AI-powered text processing and search
 
-### Highlights Tools (7)
+### Highlights Tools (8)
 1. `readwise_list_highlights` - List highlights with advanced filtering
 2. `readwise_get_daily_review` - Get spaced repetition highlights
 3. `readwise_search_highlights` - Advanced search with field-specific queries
 4. `readwise_list_books` - Get books with highlight metadata
-5. `readwise_get_book_highlights` - Get all highlights from specific book
-6. `readwise_export_highlights` - Bulk export for analysis and backup
-7. `readwise_create_highlight` - Manually add highlights with metadata
+5. `readwise_find_book_id` - Find the best matching book ID by title
+6. `readwise_get_book_highlights` - Get all highlights from specific book
+7. `readwise_export_highlights` - Bulk export for analysis and backup
+8. `readwise_create_highlight` - Manually add highlights with metadata
 
 ## Local Development
 
