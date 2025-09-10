@@ -22,14 +22,14 @@ except ImportError:
 # Initialize FastMCP server
 mcp = FastMCP("Readwise MCP Enhanced")
 
-# Add rate limiting middleware to prevent API overload
+# Add rate limiting middleware based on Readwise API documentation
 try:
     from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
-    # Conservative rate limiting: 8 requests/second with burst capacity of 15
-    # This prevents hitting Readwise API limits while allowing normal usage
+    # Readwise API limits: 240 requests/minute (4/second) general, 20/minute for LIST endpoints
+    # Using conservative 3/second with burst capacity to handle LIST endpoints safely
     mcp.add_middleware(RateLimitingMiddleware(
-        max_requests_per_second=8.0,
-        burst_capacity=15
+        max_requests_per_second=3.0,
+        burst_capacity=10  # Allow some burst for non-LIST operations
     ))
 except ImportError:
     # Graceful fallback if middleware not available
@@ -137,7 +137,15 @@ class ListBooksRequest(BaseModel):
     last_highlight_at__gt: Optional[str] = Field(None, description="Last highlight after this date")
 
 class GetBookHighlightsRequest(BaseModel):
-    bookId: int = Field(..., description="Book ID to get highlights from")
+    # Allow searching by book ID OR by book title/author (more natural workflow)
+    bookId: Optional[int] = Field(None, description="Book ID to get highlights from")
+    title: Optional[str] = Field(None, description="Book title to search for")
+    author: Optional[str] = Field(None, description="Book author to search for") 
+    # At least one field must be provided
+    
+    def model_post_init(self, __context) -> None:
+        if not any([self.bookId, self.title, self.author]):
+            raise ValueError("Must provide either bookId OR title/author to search for book")
 
 class SearchHighlightsRequest(BaseModel):
     textQuery: Optional[str] = Field(None, description="Main search query")
@@ -469,17 +477,88 @@ def readwise_list_books(request: ListBooksRequest) -> Dict[str, Any]:
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-@mcp.tool
-def readwise_get_book_highlights(request: GetBookHighlightsRequest) -> Dict[str, Any]:
+@mcp.tool(
+    name="readwise_get_book_highlights",
+    description="Get all highlights from a specific book. Can search by book ID directly or by title/author to find the book first.",
+    annotations=ToolAnnotations(
+        title="Get Book Highlights",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True
+    ) if ToolAnnotations else None,
+    tags=["highlights", "book", "search", "reading"]
+)
+async def readwise_get_book_highlights(request: GetBookHighlightsRequest, ctx: Context = None) -> Dict[str, Any]:
     """Get all highlights from a specific book"""
     try:
-        response = get_client().get_book_highlights(request.bookId)
-        return {
+        client = get_client()
+        book_id = None
+        book_info = None
+        
+        # If bookId provided directly, use it
+        if request.bookId:
+            book_id = request.bookId
+            if ctx:
+                await ctx.info(f"Getting highlights for book ID {book_id}")
+        else:
+            # Search for book by title/author first (proper API workflow)
+            if ctx:
+                search_terms = []
+                if request.title: search_terms.append(f"title: {request.title}")
+                if request.author: search_terms.append(f"author: {request.author}")
+                await ctx.info(f"Searching for book by {', '.join(search_terms)}")
+            
+            # Get list of books and search for matching title/author
+            books_response = client.list_books(page_size=100)
+            matching_books = []
+            
+            for book in books_response.data.get('results', []):
+                title_match = not request.title or (request.title.lower() in book.get('title', '').lower())
+                author_match = not request.author or (request.author.lower() in book.get('author', '').lower())
+                
+                if title_match and author_match:
+                    matching_books.append(book)
+            
+            if not matching_books:
+                return {
+                    "success": False,
+                    "error": f"No books found matching title='{request.title or 'any'}' author='{request.author or 'any'}'"
+                }
+            
+            if len(matching_books) > 1:
+                # Return multiple matches for user to choose from
+                return {
+                    "success": True,
+                    "multiple_matches": True,
+                    "books": [{"id": b["id"], "title": b["title"], "author": b["author"]} for b in matching_books],
+                    "message": f"Found {len(matching_books)} matching books. Please use readwise_get_book_highlights with specific bookId."
+                }
+            
+            # Single match found
+            book_info = matching_books[0]
+            book_id = book_info["id"]
+            if ctx:
+                await ctx.info(f"Found book: '{book_info['title']}' by {book_info['author']} (ID: {book_id})")
+        
+        # Get highlights for the book using proper API pattern
+        response = client.get_book_highlights(book_id)
+        
+        result = {
             "success": True,
             "data": response.data,
-            "bookId": request.bookId,
+            "bookId": book_id,
             "messages": [{"type": msg.type, "content": msg.content} for msg in (response.messages or [])]
         }
+        
+        if book_info:
+            result["book_info"] = {
+                "title": book_info["title"],
+                "author": book_info["author"],
+                "id": book_info["id"]
+            }
+            
+        return result
+        
     except Exception as e:
         return {"success": False, "error": str(e)}
 
