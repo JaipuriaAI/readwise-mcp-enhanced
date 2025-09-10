@@ -178,7 +178,8 @@ def extract_keywords_from_content(content: str, keywords: List[str]) -> str:
 
 @mcp.resource("readwise://books")
 async def books_resource() -> Dict[str, Any]:
-    """Direct access to all books list - cached for efficient LLM access"""
+    """Direct access to all books list - cached for efficient LLM access.
+    WORKFLOW: Find your book and its ID here, then use readwise://books/{book_id}/highlights"""
     try:
         cached_books = get_cached("books_resource")
         if cached_books is not None:
@@ -220,7 +221,8 @@ async def tags_resource() -> Dict[str, Any]:
 
 @mcp.resource("readwise://books/{book_id}/highlights")
 async def book_highlights_resource(book_id: int) -> Dict[str, Any]:
-    """Resource template: Direct access to highlights for a specific book ID"""
+    """Resource template: Direct access to highlights for a specific book ID.
+    WORKFLOW: Use readwise://search/books/{query} OR readwise://books FIRST to get the book_id, then use this resource"""
     try:
         cache_key = f"book_highlights_{book_id}"
         cached = get_cached(cache_key)
@@ -240,7 +242,8 @@ async def book_highlights_resource(book_id: int) -> Dict[str, Any]:
 
 @mcp.resource("readwise://search/books/{query}")
 async def search_books_resource(query: str) -> Dict[str, Any]:
-    """Resource template: Search books by title/author query"""
+    """Resource template: Search books by title/author query.
+    WORKFLOW: Use this FIRST to find book ID, then use readwise://books/{book_id}/highlights"""
     try:
         cache_key = f"search_books_{hash(query)}"
         cached = get_cached(cache_key)
