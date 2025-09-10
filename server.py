@@ -7,18 +7,59 @@ Ported from TypeScript to Python for FastMCP Cloud deployment
 
 import os
 import re
+import time
 from typing import List, Dict, Any, Optional, Union
 import wordninja
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Context
 from pydantic import BaseModel, Field
 from readwise_client import ReadwiseClient
+try:
+    from mcp.types import ToolAnnotations
+except ImportError:
+    # Fallback if annotations not available
+    ToolAnnotations = None
 
 # Initialize FastMCP server
 mcp = FastMCP("Readwise MCP Enhanced")
 
+# Add rate limiting middleware to prevent API overload
+try:
+    from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+    # Conservative rate limiting: 8 requests/second with burst capacity of 15
+    # This prevents hitting Readwise API limits while allowing normal usage
+    mcp.add_middleware(RateLimitingMiddleware(
+        max_requests_per_second=8.0,
+        burst_capacity=15
+    ))
+except ImportError:
+    # Graceful fallback if middleware not available
+    pass
+
 # Initialize Readwise client (will be initialized when first needed)
 readwise_token = os.getenv('READWISE_TOKEN')
 client = None
+
+# Simple cache for expensive operations (helps reduce API calls)
+_cache = {}
+_cache_timestamps = {}
+CACHE_TTL = 300  # 5 minutes
+
+def is_cache_valid(key: str) -> bool:
+    """Check if cached data is still valid"""
+    if key not in _cache or key not in _cache_timestamps:
+        return False
+    return (time.time() - _cache_timestamps[key]) < CACHE_TTL
+
+def get_cached(key: str):
+    """Get cached data if valid"""
+    if is_cache_valid(key):
+        return _cache[key]
+    return None
+
+def set_cache(key: str, data):
+    """Cache data with timestamp"""
+    _cache[key] = data
+    _cache_timestamps[key] = time.time()
 
 def get_client():
     global client
@@ -131,7 +172,17 @@ def extract_keywords_from_content(content: str, keywords: List[str]) -> str:
 
 # ========== READER TOOLS (6) ==========
 
-@mcp.tool
+@mcp.tool(
+    name="readwise_save_document",
+    description="Save a document (URL or HTML content) to Readwise Reader",
+    annotations=ToolAnnotations(
+        title="Save Document to Reader", 
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False
+    ) if ToolAnnotations else None,
+    tags=["reader", "document", "save"]
+)
 def readwise_save_document(request: SaveDocumentRequest) -> Dict[str, Any]:
     """Save a document (URL or HTML content) to Readwise Reader"""
     try:
@@ -150,10 +201,23 @@ def readwise_save_document(request: SaveDocumentRequest) -> Dict[str, Any]:
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-@mcp.tool
-def readwise_list_documents(request: ListDocumentsRequest) -> Dict[str, Any]:
+@mcp.tool(
+    name="readwise_list_documents",
+    description="List documents from Readwise Reader with optional filtering and smart content controls. Use conservative limits to avoid rate limits.",
+    annotations=ToolAnnotations(
+        title="List Reader Documents",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True
+    ) if ToolAnnotations else None,
+    tags=["reader", "document", "list", "search"]
+)
+async def readwise_list_documents(request: ListDocumentsRequest, ctx: Context = None) -> Dict[str, Any]:
     """List documents from Readwise Reader with optional filtering and smart content controls"""
     try:
+        if ctx:
+            await ctx.info("Retrieving documents from Readwise Reader...")
+            
         # Convert request to dictionary for the client
         params = {}
         for field, value in request.model_dump().items():
@@ -208,7 +272,17 @@ def readwise_update_document(request: UpdateDocumentRequest) -> Dict[str, Any]:
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-@mcp.tool
+@mcp.tool(
+    name="readwise_delete_document", 
+    description="Delete a document from Readwise Reader. This action cannot be undone!",
+    annotations=ToolAnnotations(
+        title="Delete Reader Document",
+        readOnlyHint=False,
+        destructiveHint=True,  # Mark as destructive - cannot be undone
+        idempotentHint=True
+    ) if ToolAnnotations else None,
+    tags=["reader", "document", "delete", "destructive"]
+)
 def readwise_delete_document(request: DeleteDocumentRequest) -> Dict[str, Any]:
     """Delete a document from Readwise Reader"""
     try:
@@ -221,16 +295,35 @@ def readwise_delete_document(request: DeleteDocumentRequest) -> Dict[str, Any]:
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-@mcp.tool
+@mcp.tool(
+    name="readwise_list_tags",
+    description="Get all document tags from Readwise Reader (cached for 5 minutes to reduce API calls)",
+    annotations=ToolAnnotations(
+        title="List Document Tags",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True
+    ) if ToolAnnotations else None,
+    tags=["reader", "tags", "metadata", "cached"]
+)
 def readwise_list_tags() -> Dict[str, Any]:
-    """Get all document tags from Readwise Reader"""
+    """Get all document tags from Readwise Reader (cached for 5 minutes to reduce API calls)"""
     try:
+        # Check cache first to avoid unnecessary API calls
+        cached_tags = get_cached("tags_list")
+        if cached_tags is not None:
+            return cached_tags
+            
         response = get_client().list_tags()
-        return {
+        result = {
             "success": True,
             "data": response.data,
             "messages": [{"type": msg.type, "content": msg.content} for msg in (response.messages or [])]
         }
+        
+        # Cache the result to reduce future API calls
+        set_cache("tags_list", result)
+        return result
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -259,7 +352,17 @@ def readwise_topic_search(request: TopicSearchRequest) -> Dict[str, Any]:
 
 # ========== HIGHLIGHTS TOOLS (7) ==========
 
-@mcp.tool
+@mcp.tool(
+    name="readwise_list_highlights", 
+    description="List highlights with advanced filtering options. Use conservative limits to avoid hitting rate limits.",
+    annotations=ToolAnnotations(
+        title="List Highlights",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True
+    ) if ToolAnnotations else None,
+    tags=["highlights", "list", "search", "reading"]
+)
 def readwise_list_highlights(request: ListHighlightsRequest) -> Dict[str, Any]:
     """List highlights with advanced filtering options"""
     try:
