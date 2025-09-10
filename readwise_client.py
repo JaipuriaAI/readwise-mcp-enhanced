@@ -423,18 +423,46 @@ class ReadwiseClient:
             raise error
 
     def list_books(self, **params) -> APIResponse:
-        """List books with metadata"""
+        """List books with metadata - automatically handles pagination to get ALL books"""
         try:
-            query_params = []
-            for key, value in params.items():
-                if value is not None:
-                    query_params.append(f"{key}={value}")
+            all_books = []
+            page_cursor = None
+            page_size = params.get('page_size', 1000)  # Use large page size
             
-            query_string = '&'.join(query_params)
-            endpoint = f"/books/{'?' + query_string if query_string else ''}"
+            while True:
+                # Prepare query parameters
+                query_params = []
+                for key, value in params.items():
+                    if value is not None and key != 'page_size':  # Don't duplicate page_size
+                        query_params.append(f"{key}={value}")
+                
+                # Add page_size and cursor
+                query_params.append(f"page_size={page_size}")
+                if page_cursor:
+                    query_params.append(f"pageCursor={page_cursor}")
+                
+                query_string = '&'.join(query_params)
+                endpoint = f"/books/{'?' + query_string if query_string else ''}"
+                
+                result = self._make_request(endpoint, use_v2_api=True)
+                
+                # Add books from this page
+                books_batch = result.get('results', [])
+                all_books.extend(books_batch)
+                
+                # Check for next page
+                page_cursor = result.get('nextPageCursor')
+                if not page_cursor or len(books_batch) == 0:
+                    break
             
-            result = self._make_request(endpoint, use_v2_api=True)
-            return self._create_response(result)
+            # Return all books in the standard format
+            final_result = {
+                'count': len(all_books),
+                'results': all_books
+            }
+            
+            return self._create_response(final_result)
+            
         except Exception as error:
             if str(error).startswith('RATE_LIMIT:'):
                 seconds = int(str(error).split(':')[1])
