@@ -178,18 +178,27 @@ def extract_keywords_from_content(content: str, keywords: List[str]) -> str:
 
 @mcp.resource("readwise://books")
 async def books_resource() -> Dict[str, Any]:
-    """Direct access to all books list - cached for efficient LLM access.
-    WORKFLOW: Find your book and its ID here, then use readwise://books/{book_id}/highlights"""
+    """ALL BOOKS LIST - Use this FIRST to get complete books catalog and find any book ID.
+    WORKFLOW: ALWAYS start here to find book ID, then use readwise://books/{book_id}/highlights"""
     try:
         cached_books = get_cached("books_resource")
         if cached_books is not None:
             return cached_books
         
-        response = get_client().list_books(page_size=1000)
-        if response.data.get('results'):
-            optimized_books = []
-            for book in response.data['results']:
-                optimized_books.append({
+        # Get ALL books by paginating through all pages
+        all_books = []
+        page = 1
+        page_size = 1000
+        
+        while True:
+            response = get_client().list_books(page_size=page_size, page=page)
+            books_batch = response.data.get('results', [])
+            
+            if not books_batch:  # No more books
+                break
+                
+            for book in books_batch:
+                all_books.append({
                     'id': book.get('id'),
                     'title': book.get('title'),
                     'author': book.get('author'),
@@ -197,10 +206,15 @@ async def books_resource() -> Dict[str, Any]:
                     'num_highlights': book.get('num_highlights', 0)
                 })
             
-            result = {"books": optimized_books, "total": len(optimized_books)}
-            set_cache("books_resource", result)
-            return result
-        return {"books": [], "total": 0}
+            # If we got less than page_size, we're done
+            if len(books_batch) < page_size:
+                break
+                
+            page += 1
+        
+        result = {"books": all_books, "total": len(all_books)}
+        set_cache("books_resource", result)
+        return result
     except Exception as e:
         return {"error": str(e)}
 
@@ -221,8 +235,8 @@ async def tags_resource() -> Dict[str, Any]:
 
 @mcp.resource("readwise://books/{book_id}/highlights")
 async def book_highlights_resource(book_id: int) -> Dict[str, Any]:
-    """Resource template: Direct access to highlights for a specific book ID.
-    WORKFLOW: Use readwise://search/books/{query} OR readwise://books FIRST to get the book_id, then use this resource"""
+    """Get highlights for specific book ID.
+    WORKFLOW: Use readwise://books FIRST to get ALL books and find the book_id, then use this resource"""
     try:
         cache_key = f"book_highlights_{book_id}"
         cached = get_cached(cache_key)
@@ -242,8 +256,8 @@ async def book_highlights_resource(book_id: int) -> Dict[str, Any]:
 
 @mcp.resource("readwise://search/books/{query}")
 async def search_books_resource(query: str) -> Dict[str, Any]:
-    """Resource template: Search books by title/author query.
-    WORKFLOW: Use this FIRST to find book ID, then use readwise://books/{book_id}/highlights"""
+    """Search specific books (has pagination limits - use readwise://books instead for full catalog).
+    WORKFLOW: Use readwise://books FIRST for complete list, this only if you need filtered results"""
     try:
         cache_key = f"search_books_{hash(query)}"
         cached = get_cached(cache_key)
