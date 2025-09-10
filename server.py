@@ -304,7 +304,17 @@ def readwise_get_daily_review() -> Dict[str, Any]:
 def readwise_search_highlights(request: SearchHighlightsRequest) -> Dict[str, Any]:
     """Advanced search across highlights with field-specific queries and relevance scoring"""
     try:
-        params = {k: v for k, v in request.model_dump().items() if v is not None}
+        # Convert camelCase to snake_case for the API
+        params = {}
+        if request.textQuery is not None:
+            params['text_query'] = request.textQuery
+        if request.fieldQueries is not None:
+            params['field_queries'] = request.fieldQueries
+        if request.bookId is not None:
+            params['book_id'] = request.bookId
+        if request.limit is not None:
+            params['limit'] = request.limit
+        
         response = get_client().search_highlights(**params)
         
         # Context-optimized response
