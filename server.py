@@ -350,6 +350,150 @@ def readwise_topic_search(request: TopicSearchRequest) -> Dict[str, Any]:
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+# ========== SMART SEARCH HELPER ==========
+
+class SmartSearchRequest(BaseModel):
+    query: str = Field(..., description="Your search query - can be book title, author, or content to search within")
+    limit: Optional[int] = Field(20, description="Maximum number of results to return")
+
+@mcp.tool
+def readwise_smart_search(request: SmartSearchRequest) -> Dict[str, Any]:
+    """🧠 SMART SEARCH - Automatically detects if you're looking for books by title or searching within highlight content"""
+    try:
+        query = request.query.strip()
+        results = {
+            "query": query,
+            "strategy_used": "",
+            "book_results": None,
+            "highlight_results": None,
+            "suggestions": []
+        }
+        
+        # Detect query type - book titles are usually title-case and shorter
+        is_likely_book_title = (
+            len(query.split()) <= 4 and  # 4 words or less
+            any(word[0].isupper() for word in query.split() if word) and  # Has capitalized words
+            not any(word in query.lower() for word in ['how', 'why', 'what', 'when', 'where', 'the'])  # Not question-like
+        )
+        
+        if is_likely_book_title:
+            # Search books first
+            results["strategy_used"] = "book_title_search"
+            try:
+                book_search = readwise_find_books_by_title(ListBooksRequest(page_size=request.limit))
+                if book_search.get("success"):
+                    # Filter books by title/author match
+                    all_books = book_search["data"].get("results", [])
+                    matching_books = []
+                    for book in all_books:
+                        title_match = query.lower() in book.get('title', '').lower()
+                        author_match = query.lower() in book.get('author', '').lower()
+                        if title_match or author_match:
+                            matching_books.append(book)
+                    
+                    results["book_results"] = matching_books[:request.limit]
+                    results["suggestions"].append(f"Found {len(matching_books)} books matching '{query}'")
+                    
+                    if matching_books:
+                        results["suggestions"].append("💡 To get highlights from any book, use readwise_get_all_highlights_from_book() with the book ID")
+                    else:
+                        results["suggestions"].append("🔍 No books found. Try readwise_search_within_highlight_text() to search inside highlight content instead")
+            except Exception as e:
+                results["book_results"] = {"error": str(e)}
+        else:
+            # Search within highlights
+            results["strategy_used"] = "highlight_content_search" 
+            try:
+                highlight_search = readwise_search_within_highlight_text(
+                    SearchHighlightsRequest(textQuery=query, limit=request.limit)
+                )
+                results["highlight_results"] = highlight_search
+                if highlight_search.get("success"):
+                    count = len(highlight_search.get("data", []))
+                    results["suggestions"].append(f"Found {count} highlights containing '{query}'")
+                    if count == 0:
+                        results["suggestions"].append("🔍 No highlights found. Try readwise_find_books_by_title() if you were looking for a specific book")
+            except Exception as e:
+                results["highlight_results"] = {"error": str(e)}
+        
+        return {
+            "success": True,
+            "data": results,
+            "message": f"Smart search detected this as a {results['strategy_used'].replace('_', ' ')}"
+        }
+        
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+class FindBookAndGetHighlightsRequest(BaseModel):
+    title: str = Field(..., description="Book title to search for")
+    author: Optional[str] = Field(None, description="Author name (optional, helps narrow results)")
+    limit: Optional[int] = Field(50, description="Maximum number of highlights to return")
+
+@mcp.tool
+def readwise_find_book_and_get_highlights(request: FindBookAndGetHighlightsRequest) -> Dict[str, Any]:
+    """🚀 WORKFLOW HELPER - Find a book by title/author and get all its highlights in one step"""
+    try:
+        # Step 1: Find the book
+        book_search = readwise_find_books_by_title(ListBooksRequest(page_size=100))
+        if not book_search.get("success"):
+            return {"success": False, "error": "Failed to search books", "details": book_search}
+            
+        # Filter books by title match
+        all_books = book_search["data"].get("results", [])
+        matching_books = []
+        
+        for book in all_books:
+            title_match = request.title.lower() in book.get('title', '').lower()
+            author_match = not request.author or (request.author.lower() in book.get('author', '').lower())
+            
+            if title_match and author_match:
+                matching_books.append(book)
+        
+        if not matching_books:
+            return {
+                "success": False, 
+                "error": f"No books found matching title '{request.title}'" + (f" by {request.author}" if request.author else ""),
+                "suggestion": "Try readwise_find_books_by_title() to see all available books"
+            }
+        
+        if len(matching_books) > 1:
+            return {
+                "success": True,
+                "multiple_matches": True,
+                "books": [{"id": b["id"], "title": b["title"], "author": b["author"]} for b in matching_books],
+                "message": f"Found {len(matching_books)} books matching your criteria. Please specify which one or use readwise_get_all_highlights_from_book() with a specific book ID."
+            }
+        
+        # Step 2: Get highlights from the found book
+        selected_book = matching_books[0]
+        highlights_response = readwise_get_all_highlights_from_book(
+            GetBookHighlightsRequest(bookId=selected_book["id"])
+        )
+        
+        if highlights_response.get("success"):
+            return {
+                "success": True,
+                "book": {
+                    "id": selected_book["id"],
+                    "title": selected_book["title"], 
+                    "author": selected_book["author"]
+                },
+                "highlights": highlights_response["data"],
+                "count": len(highlights_response["data"]) if highlights_response["data"] else 0,
+                "message": f"Found book '{selected_book['title']}' and retrieved {len(highlights_response['data']) if highlights_response['data'] else 0} highlights"
+            }
+        else:
+            return {
+                "success": False,
+                "error": "Found book but failed to get highlights",
+                "book": selected_book,
+                "details": highlights_response
+            }
+            
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 # ========== HIGHLIGHTS TOOLS (7) ==========
 
 @mcp.tool(
@@ -404,8 +548,8 @@ def readwise_get_daily_review() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 @mcp.tool
-def readwise_search_highlights(request: SearchHighlightsRequest) -> Dict[str, Any]:
-    """Advanced search across highlights with field-specific queries and relevance scoring"""
+def readwise_search_within_highlight_text(request: SearchHighlightsRequest) -> Dict[str, Any]:
+    """🔍 SEARCH WITHIN the text content of highlights across all books - NOT for finding books by title (use readwise_find_books_by_title for that)"""
     try:
         # Convert camelCase to snake_case for the API
         params = {}
@@ -441,8 +585,8 @@ def readwise_search_highlights(request: SearchHighlightsRequest) -> Dict[str, An
         return {"success": False, "error": str(e)}
 
 @mcp.tool
-def readwise_list_books(request: ListBooksRequest) -> Dict[str, Any]:
-    """Get books with highlight metadata and filtering"""
+def readwise_find_books_by_title(request: ListBooksRequest) -> Dict[str, Any]:
+    """🔍 FIND BOOKS by title, author, or metadata - use this to locate specific books before getting their highlights"""
     try:
         params = {k: v for k, v in request.model_dump().items() if v is not None}
         response = get_client().list_books(**params)
@@ -470,8 +614,8 @@ def readwise_list_books(request: ListBooksRequest) -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 @mcp.tool
-def readwise_get_book_highlights(request: GetBookHighlightsRequest) -> Dict[str, Any]:
-    """Get all highlights from a specific book"""
+def readwise_get_all_highlights_from_book(request: GetBookHighlightsRequest) -> Dict[str, Any]:
+    """📖 GET ALL HIGHLIGHTS from a specific book (requires book ID from readwise_find_books_by_title first)"""
     try:
         response = get_client().get_book_highlights(request.bookId)
         return {
