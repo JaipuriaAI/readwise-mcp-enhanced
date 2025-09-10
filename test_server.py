@@ -21,7 +21,7 @@ async def test_server():
                 print(f"{i:2d}. {tool}")
                 
         print("\n✅ Server initialization successful!")
-        print("✅ All 13 tools registered correctly!")
+        print("✅ All 14 tools registered correctly!")
         print("✅ Ready for FastMCP Cloud deployment!")
         
         return True

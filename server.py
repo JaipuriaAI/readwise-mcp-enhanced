@@ -8,6 +8,7 @@ Ported from TypeScript to Python for FastMCP Cloud deployment
 import os
 import re
 import time
+from difflib import SequenceMatcher
 from typing import List, Dict, Any, Optional, Union
 import wordninja
 from fastmcp import FastMCP, Context
@@ -144,6 +145,9 @@ class SearchHighlightsRequest(BaseModel):
     fieldQueries: Optional[List[Dict[str, str]]] = Field(None, description="Field-specific queries")
     bookId: Optional[int] = Field(None, description="Filter by book ID")
     limit: Optional[int] = Field(None, description="Maximum number of results")
+
+class FindBookIdRequest(BaseModel):
+    title: str = Field(..., description="Title of the book to find")
 
 # Utility functions
 def process_with_wordninja(text: str) -> str:
@@ -465,6 +469,49 @@ def readwise_list_books(request: ListBooksRequest) -> Dict[str, Any]:
             "success": True,
             "data": response.data,
             "messages": [{"type": msg.type, "content": msg.content} for msg in (response.messages or [])]
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@mcp.tool(
+    name="readwise_find_book_id",
+    description="Find the best matching book ID by title",
+    annotations=ToolAnnotations(
+        title="Find Book ID",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True
+    ) if ToolAnnotations else None,
+    tags=["books", "search", "highlights"]
+)
+def readwise_find_book_id(request: FindBookIdRequest) -> Dict[str, Any]:
+    """Find a book by title and return its ID and minimal metadata"""
+    try:
+        response = get_client().list_books(search=request.title, page_size=100)
+        books = response.data.get('results', [])
+        if not books:
+            return {"success": False, "error": "Book not found"}
+
+        target = request.title.lower()
+        best_book = None
+        best_ratio = 0.0
+        for book in books:
+            title = book.get('title', '').lower()
+            ratio = SequenceMatcher(None, target, title).ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_book = book
+
+        if not best_book:
+            return {"success": False, "error": "Book not found"}
+
+        return {
+            "success": True,
+            "data": {
+                'id': best_book.get('id'),
+                'title': best_book.get('title'),
+                'author': best_book.get('author')
+            }
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
